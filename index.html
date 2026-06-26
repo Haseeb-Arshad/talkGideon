@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>GIDEON</title>
+    <meta name="description" content="GIDEON — a holographic, conversational AI presence." />
+  </head>
+  <body>
+    <div id="app">
+      <!-- The hologram renders here -->
+      <canvas id="stage"></canvas>
+
+      <!-- Atmospheric overlays -->
+      <div class="vignette"></div>
+      <div class="scanlines"></div>
+      <div class="grain"></div>
+
+      <!-- HUD -->
+      <header class="hud-top">
+        <div class="ident">
+          <span class="logo">GIDEON</span>
+          <span class="sub">holographic intelligence</span>
+        </div>
+        <div class="status">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText" class="status-text">booting</span>
+        </div>
+      </header>
+
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+
+      <!-- Captions -->
+      <section class="captions">
+        <div id="aiCaption" class="caption ai" aria-live="polite"></div>
+        <div id="userCaption" class="caption user" aria-live="polite"></div>
+      </section>
+
+      <!-- Speaking equalizer -->
+      <div id="eq" class="eq" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+
+      <!-- Controls: works everywhere (type), with voice where supported -->
+      <footer class="controls">
+        <form id="inputForm" class="inputbar">
+          <input
+            id="textInput"
+            class="text-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Say something to Gideon…"
+            aria-label="Message Gideon"
+          />
+          <button id="sendBtn" class="send" type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path fill="currentColor" d="M3 11.5 21 3l-8.5 18-2.2-7.3L3 11.5Z" />
+            </svg>
+          </button>
+        </form>
+        <button id="micBtn" class="mic" aria-label="Talk to Gideon">
+          <span class="ring"></span>
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.92V21a1 1 0 1 1-2 0v-3.08A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z"
+            />
+          </svg>
+        </button>
+      </footer>
+      <div id="hint" class="hint"></div>
+
+      <!-- First-run gate (browsers require a user gesture for audio/mic) -->
+      <div id="boot" class="boot">
+        <div class="boot-card">
+          <div class="boot-glow"></div>
+          <h1>GIDEON</h1>
+          <p>A presence made of light. Speak, and she answers — face to face.</p>
+          <button id="bootBtn" class="boot-btn">Wake her</button>
+          <small id="bootNote"></small>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
