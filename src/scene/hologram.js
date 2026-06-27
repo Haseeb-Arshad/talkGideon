@@ -6,12 +6,14 @@
 // it loads instantly and runs on plain WebGL (desktop, mobile, older GPUs).
 //
 // Public API the app drives:
-//   load()            -> Promise, resolves when ready
-//   start()           -> begin the render loop
-//   setSpeaking(bool) -> mouth + glow react
-//   pulse()           -> a beat of emphasis (per spoken word)
-//   setPointer(x,y)   -> she turns slightly toward you
-//   setMood(name)     -> 'idle' | 'listen' | 'think' | 'speak'
+//   load()              -> Promise, resolves when ready
+//   start()             -> begin the render loop
+//   setSpeaking(bool)   -> mouth + glow react
+//   setTalkTarget(v)    -> drive mouth openness 0..1 (per spoken word)
+//   pulse()             -> a beat of emphasis (per spoken word)
+//   setPointer(x,y)     -> she turns slightly toward you
+//   nudgeRotation(x,y)  -> drag to spin her (inertial, self-righting)
+//   setMood(name)       -> 'idle' | 'listen' | 'think' | 'speak'
 
 import {
   Scene,
@@ -32,12 +34,17 @@ import { createFaceMaterials } from './shaders.js'
 
 const FACE_URL = '/face.json'
 
+// Pure monochrome. Mood reads through brightness/contrast, never hue:
+//   idle = calm mid-grey, listen = alert brighter, think = dim+low-contrast,
+//   speak = brightest white.
 const MOODS = {
-  idle: { a: '#1f7fb0', b: '#bfeeff' },
-  listen: { a: '#7a6a1f', b: '#ffe9a8' },
-  think: { a: '#2a4fb0', b: '#cfd9ff' },
-  speak: { a: '#9f2f8f', b: '#ffc6f2' },
+  idle: { a: '#6e6e6e', b: '#f2f2f2' },
+  listen: { a: '#8c8c8c', b: '#ffffff' },
+  think: { a: '#4a4a4a', b: '#cccccc' },
+  speak: { a: '#9a9a9a', b: '#ffffff' },
 }
+
+const REDUCED = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 export class Hologram {
   constructor(canvas) {
@@ -46,24 +53,44 @@ export class Hologram {
     this.pointer = new Vector2(0, 0)
     this.pointerTarget = new Vector2(0, 0)
     this.speaking = false
-    this.talk = 0
+    this.talk = 0          // smoothed mouth openness actually rendered
+    this.talkTarget = 0    // where the mouth wants to be (driven by speech)
     this.mood = MOODS.idle
     this.moodA = new Color(MOODS.idle.a)
     this.moodB = new Color(MOODS.idle.b)
     this.materials = []
+    this.faceMaterials = []
 
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2)
+    // Materialise + scan + flicker state
+    this.reveal = 0
+    this.revealTarget = 0
+    this.scanY = -2
+    this.flicker = 1
+
+    // Drag-to-rotate (inertial, returns to face-you)
+    this.dragY = 0
+    this.dragX = 0
+    this.dragVelY = 0
+    this.dragVelX = 0
+
+    // Adaptive performance
+    this.maxDpr = Math.min(window.devicePixelRatio || 1, REDUCED ? 1.25 : 2)
+    this.dpr = this.maxDpr
+    this._fpsAvg = 60
+    this._perfCooldown = 0
+
     this._initRenderer()
     this._initScene()
     this._initDust()
     this._initRing()
     window.addEventListener('resize', () => this._resize())
+    document.addEventListener('visibilitychange', () => this._onVisibility())
   }
 
   _initRenderer() {
     this.renderer = new WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: !REDUCED,
       alpha: true,
       powerPreference: 'high-performance',
     })
@@ -106,6 +133,7 @@ export class Hologram {
     geo.computeBoundingSphere()
 
     const { halo, core } = createFaceMaterials(mouthY, this.dpr)
+    this.faceMaterials = [halo, core]
     this.materials.push(halo, core, this.dust.material, this.ring.material)
 
     this.face.add(new Points(geo, halo))
@@ -116,7 +144,7 @@ export class Hologram {
   }
 
   _initDust() {
-    const N = 600
+    const N = REDUCED ? 220 : 600
     const pos = new Float32Array(N * 3)
     const seed = new Float32Array(N)
     for (let i = 0; i < N; i++) {
@@ -129,7 +157,7 @@ export class Hologram {
     g.setAttribute('position', new BufferAttribute(pos, 3))
     g.setAttribute('aSeed', new BufferAttribute(seed, 1))
     const m = new ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uColor: { value: new Color('#7fd6ff') }, uPR: { value: this.dpr } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new Color('#cbcbcb') }, uPR: { value: this.dpr } },
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -174,7 +202,7 @@ export class Hologram {
     g.setAttribute('position', new BufferAttribute(pos, 3))
     g.setAttribute('aSeed', new BufferAttribute(seed, 1))
     const m = new ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uColor: { value: new Color('#9fe8ff') }, uPR: { value: this.dpr } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new Color('#ededed') }, uPR: { value: this.dpr } },
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -199,34 +227,79 @@ export class Hologram {
     this.scene.add(this.ring)
   }
 
-  setSpeaking(on) { this.speaking = on; if (on) this.setMood('speak') }
-  pulse() { this.talk = 1 }
+  setSpeaking(on) {
+    this.speaking = on
+    if (on) this.setMood('speak')
+    else this.talkTarget = 0
+  }
+  // Drive the mouth from real speech: 0 (closed) .. 1 (wide). Decays on its own.
+  setTalkTarget(v) { this.talkTarget = MathUtils.clamp(v, 0, 1) }
+  pulse() { this.talkTarget = Math.max(this.talkTarget, 0.6) }
   setPointer(x, y) { this.pointerTarget.set(x, y) }
+  nudgeRotation(dx, dy) {
+    this.dragVelY += dx * 2.2
+    this.dragVelX += dy * 1.4
+  }
   setMood(name) { this.mood = MOODS[name] || MOODS.idle }
 
   start() {
+    if (this._raf) return
+    this.revealTarget = 1 // begin materialising
+    this.clock.getDelta()
     const tick = () => { this._frame(); this._raf = requestAnimationFrame(tick) }
-    tick()
+    this._raf = requestAnimationFrame(tick)
+  }
+
+  _onVisibility() {
+    if (document.hidden) {
+      cancelAnimationFrame(this._raf)
+      this._raf = 0
+    } else if (this.ready && !this._raf) {
+      this.clock.getDelta() // swallow the gap so nothing jumps
+      const tick = () => { this._frame(); this._raf = requestAnimationFrame(tick) }
+      this._raf = requestAnimationFrame(tick)
+    }
   }
 
   _frame() {
     const t = this.clock.elapsedTime
-    this.clock.getDelta()
+    const dt = Math.min(this.clock.getDelta(), 0.05)
+    this._govern(dt)
 
+    // --- Materialise toward target (eases in over ~1.5s).
+    this.reveal += (this.revealTarget - this.reveal) * Math.min(1, dt * 2.2)
+
+    // --- Mouth envelope: snap open toward the target, fall back closed. While
+    // speaking we add a fine flutter so it never looks frozen between words.
     if (this.speaking) {
-      const chatter = 0.4 + 0.25 * Math.sin(t * 13) + 0.15 * Math.sin(t * 27)
-      this.talk = Math.max(this.talk * 0.9, 0.25 + 0.25 * Math.max(0, chatter))
-    } else {
-      this.talk *= 0.85
+      const flutter = 0.12 * (0.5 + 0.5 * Math.sin(t * 22))
+      this.talkTarget = Math.max(this.talkTarget * 0.9, 0.18 + flutter)
     }
+    const toward = this.talkTarget > this.talk ? 0.5 : 0.18 // fast attack, soft release
+    this.talk += (this.talkTarget - this.talk) * toward
+    this.talkTarget *= 0.9
+
+    // --- Scan sweep climbs the face and wraps; flicker = projector instability.
+    this.scanY = ((t * 0.55) % 2.6) - 1.3
+    const inst = 0.97 + 0.03 * Math.sin(t * 30.0)
+    const blinkDip = Math.pow(0.5 + 0.5 * Math.sin(t * 0.9), 60.0) // rare brief dip
+    this.flicker = inst * (1.0 - 0.25 * blinkDip)
 
     if (this.ready) {
+      // Drag-to-rotate: inertia + gentle self-righting back to facing you.
+      this.dragVelY *= 0.9; this.dragVelX *= 0.9
+      this.dragY += this.dragVelY * dt; this.dragX += this.dragVelX * dt
+      this.dragY *= 0.94; this.dragX *= 0.94
+      this.dragX = MathUtils.clamp(this.dragX, -0.5, 0.5)
+
       this.pointer.lerp(this.pointerTarget, 0.06)
       const idleY = Math.sin(t * 0.5) * 0.05
       const idleX = Math.sin(t * 0.37) * 0.03
-      this.face.rotation.y += ((this.pointer.x * 0.4 + idleY) - this.face.rotation.y) * 0.05
-      this.face.rotation.x += ((-this.pointer.y * 0.22 + idleX) - this.face.rotation.x) * 0.05
-      const breathe = 1 + Math.sin(t * 1.4) * 0.01
+      const targetY = this.pointer.x * 0.4 + idleY + this.dragY
+      const targetX = -this.pointer.y * 0.22 + idleX + this.dragX
+      this.face.rotation.y += (targetY - this.face.rotation.y) * 0.08
+      this.face.rotation.x += (targetX - this.face.rotation.x) * 0.08
+      const breathe = 1 + Math.sin(t * 1.4) * 0.01 + this.talk * 0.015
       this.face.scale.setScalar(breathe)
       this.face.position.y = Math.sin(t * 1.4) * 0.01
     }
@@ -238,12 +311,39 @@ export class Hologram {
       const u = m.uniforms
       if (u.uTime) u.uTime.value = t
       if (u.uTalk) u.uTalk.value = this.talk
+      if (u.uReveal) u.uReveal.value = this.reveal
+      if (u.uScanY) u.uScanY.value = this.scanY
+      if (u.uFlicker) u.uFlicker.value = this.flicker
       if (u.uColorA) u.uColorA.value.copy(this.moodA)
       if (u.uColorB) u.uColorB.value.copy(this.moodB)
     }
     this.ring.rotation.y = t * 0.25
 
     this.renderer.render(this.scene, this.camera)
+  }
+
+  // Keep it fast everywhere: if frames get heavy, quietly drop pixel ratio.
+  _govern(dt) {
+    if (dt <= 0) return
+    const fps = 1 / dt
+    this._fpsAvg += (fps - this._fpsAvg) * 0.1
+    if (this._perfCooldown > 0) { this._perfCooldown -= dt; return }
+    if (this._fpsAvg < 45 && this.dpr > 0.85) {
+      this.dpr = Math.max(0.75, this.dpr - 0.25)
+      this._applyDpr()
+      this._perfCooldown = 1.5
+    } else if (this._fpsAvg > 58 && this.dpr < this.maxDpr) {
+      this.dpr = Math.min(this.maxDpr, this.dpr + 0.25)
+      this._applyDpr()
+      this._perfCooldown = 2.5
+    }
+  }
+
+  _applyDpr() {
+    this.renderer.setPixelRatio(this.dpr)
+    for (const m of this.materials) if (m.uniforms.uPixelRatio) m.uniforms.uPixelRatio.value = this.dpr
+    if (this.dust?.material.uniforms.uPR) this.dust.material.uniforms.uPR.value = this.dpr
+    if (this.ring?.material.uniforms.uPR) this.ring.material.uniforms.uPR.value = this.dpr
   }
 
   _resize() {

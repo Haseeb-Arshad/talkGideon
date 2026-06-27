@@ -1,4 +1,4 @@
-// The two caption lines: GIDEON's words (large, cyan) and yours (small, below).
+// The two caption lines: GIDEON's words (large, white) and yours (small, below).
 
 export class Captions {
   constructor() {

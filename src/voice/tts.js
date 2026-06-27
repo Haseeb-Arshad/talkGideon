@@ -66,7 +66,13 @@ export class Speaker {
     u.rate = 1.0
     u.pitch = 1.05
     u.volume = 1.0
-    u.onboundary = () => this.holo?.pulse()
+    // Drive the mouth from the actual word being spoken: open wide on vowels,
+    // softer on consonants, so the jaw tracks speech instead of guessing.
+    u.onboundary = (e) => {
+      if (e.name === 'sentence') return
+      const word = wordAt(text, e.charIndex ?? 0)
+      this.holo?.setTalkTarget(openness(word))
+    }
     u.onend = () => this._next()
     u.onerror = () => this._next()
     this.synth.speak(u)
@@ -78,4 +84,24 @@ export class Speaker {
     this.speaking = false
     this.holo?.setSpeaking(false)
   }
+}
+
+// The word straddling charIndex within the full utterance text.
+function wordAt(text, i) {
+  const left = text.slice(0, i).search(/\S+$/)
+  const start = left === -1 ? i : left
+  const m = text.slice(start).match(/^\S+/)
+  return m ? m[0] : ''
+}
+
+// Rough viseme amplitude for a word: vowels open the mouth, length adds weight.
+function openness(word) {
+  if (!word) return 0.4
+  const w = word.toLowerCase()
+  let v = 0
+  for (const ch of w) {
+    if ('aeiouy'.includes(ch)) v += 'ao'.includes(ch) ? 1 : 0.6
+  }
+  const base = 0.35 + Math.min(0.55, v * 0.22)
+  return Math.min(1, base + (w.length > 6 ? 0.1 : 0))
 }

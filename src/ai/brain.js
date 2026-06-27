@@ -5,6 +5,13 @@ export class Brain {
   constructor() {
     this.history = []
     this.mode = 'offline'
+    this.controller = null
+  }
+
+  // Cancel an in-flight reply (barge-in).
+  abort() {
+    try { this.controller?.abort() } catch {}
+    this.controller = null
   }
 
   async health() {
@@ -25,11 +32,13 @@ export class Brain {
     this.history.push({ role: 'user', content: userText })
 
     let full = ''
+    this.controller = new AbortController()
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: this.history }),
+        signal: this.controller.signal,
       })
       if (!res.ok || !res.body) throw new Error('bad response')
 
@@ -58,8 +67,16 @@ export class Brain {
         }
       }
     } catch (err) {
+      if (err?.name === 'AbortError') {
+        // Barge-in: keep whatever she'd said so far, stay quiet about it.
+        full = full.trim()
+        if (full) this.history.push({ role: 'assistant', content: full })
+        return full
+      }
       onError?.('connection lost')
       if (!full) full = "I lost the thread there for a second. Try me again?"
+    } finally {
+      this.controller = null
     }
 
     full = full.trim()

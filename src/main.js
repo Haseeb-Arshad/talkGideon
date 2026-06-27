@@ -17,6 +17,14 @@ const els = {
   eq: document.getElementById('eq'),
   statusDot: document.getElementById('statusDot'),
   statusText: document.getElementById('statusText'),
+  brainTag: document.getElementById('brainTag'),
+}
+
+// Short label for the brain currently in use, e.g. "north-mini-code" or
+// "claude-opus-4-8". Empty in offline/local mode.
+function brainLabel(h) {
+  if (!h || h.mode !== 'live' || !h.model) return ''
+  return h.model.split('/').pop().replace(/:free$/, '')
 }
 
 const captions = new Captions()
@@ -27,6 +35,8 @@ const speaker = new Speaker(hologram)
 let listening = false // voice conversation mode
 let busy = false // thinking or speaking
 let ready = false
+let turnId = 0 // bumps every turn so an interrupted reply can't clobber the new one
+let speechTurn = 0 // which turn the current speech belongs to
 
 function setStatus(state, text) {
   els.statusDot.className = 'dot ' + (state || '')
@@ -46,13 +56,30 @@ const recognizer = createRecognizer({
   onError: (e) => console.warn('STT:', e),
 })
 
+// Cut off whatever she's saying right now (barge-in).
+function interrupt() {
+  brain.abort()
+  speaker.stop()
+  els.eq.classList.remove('on')
+}
+
+// Fully stop the current turn (Esc / tap): cancel, invalidate it, go idle.
+function stopTurn() {
+  interrupt()
+  turnId++ // the in-flight handleUtterance will see myTurn !== turnId and bail
+  endTurn(turnId)
+}
+
 // --- A single turn ---------------------------------------------------------
 async function handleUtterance(text) {
   text = (text || '').trim()
-  if (!text || busy) return
+  if (!text) return
+  interrupt() // barge-in: a new line silences whatever she's saying (incl. the greeting)
+
+  const myTurn = ++turnId
+  speechTurn = myTurn
   busy = true
   recognizer.stop()
-  speaker.stop()
 
   captions.user(text)
   setStatus('think', 'thinking')
@@ -63,6 +90,7 @@ async function handleUtterance(text) {
   let spoke = false
 
   const flush = (final = false) => {
+    if (myTurn !== turnId) return
     const parts = pending.split(/(?<=[.!?…])\s+/)
     pending = final ? '' : parts.pop()
     for (const p of parts) { const s = p.trim(); if (s) { speaker.speak(s); spoke = true } }
@@ -71,6 +99,7 @@ async function handleUtterance(text) {
 
   await brain.send(text, {
     onDelta: (d) => {
+      if (myTurn !== turnId) return
       acc += d
       pending += d
       captions.ai(acc, { streaming: true })
@@ -79,15 +108,21 @@ async function handleUtterance(text) {
     onError: (m) => console.warn('brain:', m),
   })
 
+  if (myTurn !== turnId) return // superseded by a newer line
   captions.ai(acc || '…')
   flush(true)
-  if (!spoke || !speaker.supported) endTurn()
+  if (!spoke || !speaker.supported) endTurn(myTurn)
 }
 
-speaker.onStart = () => { setStatus('speak', 'speaking'); els.eq.classList.add('on') }
-speaker.onEnd = () => { els.eq.classList.remove('on'); endTurn() }
+speaker.onStart = () => {
+  if (speechTurn !== turnId) return
+  setStatus('speak', 'speaking')
+  els.eq.classList.add('on')
+}
+speaker.onEnd = () => { els.eq.classList.remove('on'); endTurn(speechTurn) }
 
-function endTurn() {
+function endTurn(forTurn) {
+  if (forTurn !== undefined && forTurn !== turnId) return // a newer turn owns the floor
   busy = false
   if (listening) {
     setStatus('listen', 'listening')
@@ -132,9 +167,40 @@ els.mic.addEventListener('click', () => {
   listening ? stopListening() : startListening()
 })
 
-// --- Pointer parallax ------------------------------------------------------
+// --- Pointer: parallax when hovering, drag to spin, tap to interrupt -------
+let dragging = false
+let dragMoved = 0
+let lastX = 0
+let lastY = 0
+
 window.addEventListener('pointermove', (e) => {
-  hologram.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1)
+  if (dragging) {
+    const dx = e.clientX - lastX
+    const dy = e.clientY - lastY
+    lastX = e.clientX; lastY = e.clientY
+    dragMoved += Math.abs(dx) + Math.abs(dy)
+    hologram.nudgeRotation(dx / window.innerWidth, dy / window.innerHeight)
+  } else {
+    hologram.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1)
+  }
+})
+els.canvas.addEventListener('pointerdown', (e) => {
+  dragging = true
+  dragMoved = 0
+  lastX = e.clientX; lastY = e.clientY
+  els.canvas.setPointerCapture?.(e.pointerId)
+})
+els.canvas.addEventListener('pointerup', (e) => {
+  dragging = false
+  els.canvas.releasePointerCapture?.(e.pointerId)
+  // A tap (not a drag) on the stage while she's talking cuts her off.
+  if (dragMoved < 6 && busy) stopTurn()
+})
+
+// Esc interrupts; "/" jumps to the text box.
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && busy) stopTurn()
+  else if (e.key === '/' && document.activeElement !== els.input) { e.preventDefault(); els.input.focus() }
 })
 
 // --- Boot ------------------------------------------------------------------
@@ -153,6 +219,10 @@ async function boot() {
 
   const h = await brain.health()
   idleStatus()
+
+  const tag = brainLabel(h)
+  els.brainTag.textContent = tag
+  els.brainTag.classList.toggle('show', !!tag)
 
   if (!recognizer.supported || !speaker.supported) {
     els.mic.classList.toggle('disabled', !recognizer.supported)
