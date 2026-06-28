@@ -1,0 +1,36 @@
+# Local infrastructure for the Gideon API (Postgres + Redis).
+# Usage: docker compose up -d   then   make migrate
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gideon-postgres
+    environment:
+      POSTGRES_USER: gideon
+      POSTGRES_PASSWORD: gideon
+      POSTGRES_DB: gideon
+    ports:
+      - "5432:5432"
+    volumes:
+      - gideon_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gideon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: gideon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - gideon_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  gideon_pg:
+  gideon_redis:

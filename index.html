@@ -2,95 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>GIDEON</title>
-    <meta name="description" content="GIDEON — a holographic, conversational AI presence." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Gideon — personal intelligence</title>
+    <meta
+      name="description"
+      content="Gideon is a calm, voice-first personal intelligence assistant that turns answers into beautiful, structured interfaces."
+    />
+    <meta name="theme-color" content="#f4efe4" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;450;500;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <div id="app">
-      <!-- The hologram renders here -->
-      <canvas id="stage"></canvas>
-
-      <!-- Atmospheric overlays -->
-      <div class="vignette"></div>
-      <div class="scanlines"></div>
-      <div class="grain"></div>
-
-      <!-- HUD -->
-      <header class="hud-top">
-        <div class="ident">
-          <span class="logo">GIDEON</span>
-          <span class="sub">holographic intelligence</span>
-        </div>
-        <div class="status-col">
-          <div class="status">
-            <span id="statusDot" class="dot"></span>
-            <span id="statusText" class="status-text">booting</span>
-          </div>
-          <div id="brainTag" class="brain-tag"></div>
-        </div>
-      </header>
-
-      <div class="corner tl"></div>
-      <div class="corner tr"></div>
-      <div class="corner bl"></div>
-      <div class="corner br"></div>
-
-      <!-- Captions -->
-      <section class="captions">
-        <div id="aiCaption" class="caption ai" aria-live="polite"></div>
-        <div id="userCaption" class="caption user" aria-live="polite"></div>
-      </section>
-
-      <!-- Speaking equalizer -->
-      <div id="eq" class="eq" aria-hidden="true">
-        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-      </div>
-
-      <!-- Controls: works everywhere (type), with voice where supported -->
-      <footer class="controls">
-        <form id="inputForm" class="inputbar">
-          <input
-            id="textInput"
-            class="text-input"
-            type="text"
-            autocomplete="off"
-            placeholder="Say something to Gideon…"
-            aria-label="Message Gideon"
-          />
-          <button id="sendBtn" class="send" type="submit" aria-label="Send">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
-              stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="21" y1="3" x2="10.5" y2="13.5" />
-              <path d="M21 3 14.5 21l-4-8-8-4L21 3Z" />
-            </svg>
-          </button>
-        </form>
-        <button id="micBtn" class="mic" aria-label="Talk to Gideon">
-          <span class="ring"></span>
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
-            stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0" />
-            <line x1="12" y1="18" x2="12" y2="21" />
-            <line x1="9" y1="21" x2="15" y2="21" />
-          </svg>
-        </button>
-      </footer>
-      <div id="hint" class="hint"></div>
-
-      <!-- First-run gate (browsers require a user gesture for audio/mic) -->
-      <div id="boot" class="boot">
-        <div class="boot-card">
-          <div class="boot-glow"></div>
-          <h1>GIDEON</h1>
-          <p>A presence made of light. Speak, and she answers — face to face.</p>
-          <button id="bootBtn" class="boot-btn">Wake her</button>
-          <small id="bootNote"></small>
-        </div>
-      </div>
-    </div>
-
-    <script type="module" src="/src/main.js"></script>
+    <div id="app" aria-label="Gideon"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

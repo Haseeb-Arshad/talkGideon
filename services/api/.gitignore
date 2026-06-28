@@ -1,0 +1,5 @@
+/bin/
+/vault/
+.env
+*.test
+coverage.out

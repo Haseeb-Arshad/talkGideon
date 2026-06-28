@@ -1,5 +1,10 @@
 node_modules
 dist
+.output
+.nitro
+.tanstack
+.vinxi
+src/routeTree.gen.ts
 .env
 *.log
 .DS_Store
